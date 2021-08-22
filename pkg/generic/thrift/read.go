@@ -19,6 +19,7 @@ package thrift
 import (
 	"context"
 	"fmt"
+	"github.com/bitly/go-simplejson"
 
 	"github.com/apache/thrift/lib/go/thrift"
 
@@ -66,6 +67,44 @@ func nextReader(tt descriptor.Type, t *descriptor.TypeDescriptor) (reader, error
 		return readStruct, nil
 	case descriptor.VOID:
 		return readVoid, nil
+	case descriptor.JSON:
+		return readJSON, nil
+	default:
+		return nil, fmt.Errorf("unsupported type: %d", tt)
+	}
+}
+
+func nextJSONReader(tt descriptor.Type, t *descriptor.TypeDescriptor) (reader, error) {
+	if err := assertType(tt, t.Type); err != nil {
+		return nil, err
+	}
+	switch tt {
+	case descriptor.BOOL:
+		return readBool, nil
+	case descriptor.BYTE:
+		return readByte, nil
+	case descriptor.I16:
+		return readInt16, nil
+	case descriptor.I32:
+		return readInt32, nil
+	case descriptor.I64:
+		return readInt64, nil
+	case descriptor.STRING:
+		return readString, nil
+	case descriptor.DOUBLE:
+		return readDouble, nil
+	case descriptor.LIST:
+		return readList, nil
+	case descriptor.SET:
+		return readList, nil
+	case descriptor.MAP:
+		return readMap, nil
+	case descriptor.STRUCT:
+		return readJSON, nil
+	case descriptor.VOID:
+		return readVoid, nil
+	case descriptor.JSON:
+		return readJSON, nil
 	default:
 		return nil, fmt.Errorf("unsupported type: %d", tt)
 	}
@@ -108,6 +147,9 @@ func skipStructReader(ctx context.Context, in thrift.TProtocol, t *descriptor.Ty
 				// use http response reader when http generic call
 				// only support struct response method, return error when use base type response
 				reader = readHTTPResponse
+			}
+			if opt != nil && opt.forJSON && !opt.http {
+				reader = readJSON
 			}
 			if v, err = reader(ctx, in, field.Type, opt); err != nil {
 				return nil, err
@@ -350,6 +392,61 @@ func readHTTPResponse(ctx context.Context, in thrift.TProtocol, t *descriptor.Ty
 			if err = field.HTTPMapping.Response(ctx, resp, field, val); err != nil {
 				return nil, err
 			}
+		}
+		if err := in.ReadFieldEnd(); err != nil {
+			return nil, err
+		}
+		readFields[int32(fieldID)] = struct{}{}
+	}
+}
+
+func readJSON(ctx context.Context, in thrift.TProtocol, t *descriptor.TypeDescriptor, opt *readerOption) (interface{}, error) {
+	v := simplejson.New()
+	_, err := in.ReadStructBegin()
+	if err != nil {
+		return nil, err
+	}
+	readFields := map[int32]struct{}{}
+	for {
+		_, fieldType, fieldID, err := in.ReadFieldBegin()
+		if err != nil {
+			return nil, err
+		}
+		if fieldType == thrift.STOP {
+			if err := in.ReadFieldEnd(); err != nil {
+				return nil, err
+			}
+			// check required
+			// void is nil struct
+			if t.Struct != nil {
+				if err := t.Struct.CheckRequired(readFields); err != nil {
+					return nil, err
+				}
+			}
+			return v, in.ReadStructEnd()
+		}
+		field, ok := t.Struct.FieldsByID[int32(fieldID)]
+		if !ok {
+			// just ignore the missing field, maybe server update its idls
+			if err := in.Skip(fieldType); err != nil {
+				return nil, err
+			}
+		} else {
+			_fieldType := descriptor.FromThriftTType(fieldType)
+			reader, err := nextJSONReader(_fieldType, field.Type)
+			if err != nil {
+				return nil, fmt.Errorf("nextReader of %s/%s/%d error %w", t.Name, field.Name, fieldID, err)
+			}
+			val, err := reader(ctx, in, field.Type, opt)
+			if err != nil {
+				return nil, err
+			}
+			if field.ValueMapping != nil {
+				if val, err = field.ValueMapping.Response(ctx, val, field); err != nil {
+					return nil, err
+				}
+			}
+			v.Set(field.FieldName(), val)
 		}
 		if err := in.ReadFieldEnd(); err != nil {
 			return nil, err
