@@ -20,9 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 	"github.com/apache/thrift/lib/go/thrift"
-
 	"github.com/cloudwego/kitex/pkg/generic/descriptor"
 )
 
@@ -75,6 +73,8 @@ func typeOf(sample interface{}, tt descriptor.Type) (descriptor.Type, writer, er
 		}
 	case *descriptor.HTTPRequest:
 		return descriptor.STRUCT, writeHTTPRequest, nil
+	case *descriptor.JSONValue:
+		return descriptor.JSON, writeJSON, nil
 	case nil, descriptor.Void: // nil and Void
 		return descriptor.VOID, writeVoid, nil
 	}
@@ -444,6 +444,50 @@ func writeHTTPRequest(ctx context.Context, val interface{}, out thrift.TProtocol
 		if err := out.WriteFieldEnd(); err != nil {
 			return err
 		}
+	}
+	if err := out.WriteFieldStop(); err != nil {
+		return err
+	}
+	return out.WriteStructEnd()
+}
+
+func writeJSON(ctx context.Context, val interface{}, out thrift.TProtocol, t *descriptor.TypeDescriptor, opt *writerOption) error {
+	v := val.(*descriptor.JSONValue)
+	data := v.Value
+	err := out.WriteStructBegin(t.Struct.Name)
+	if err != nil {
+		return err
+	}
+	for name, field := range t.Struct.FieldsByName {
+		elem := data.Get(name)
+		if field.Type.IsRequestBase && opt.requestBase != nil {
+			//if err := writeRequestBase(ctx, elem, out, field, opt); err != nil {
+			//	return err
+			//}
+			continue
+		}
+
+		if elem.Interface() == nil {
+			if field.Required {
+				return fmt.Errorf("required field (%d/%s) missing", field.ID, name)
+			}
+			continue
+		}
+
+		writer, err := nextWriter(elem, field.Type)
+		if err != nil {
+			return fmt.Errorf("nextWriter of field[%s] error %w", name, err)
+		}
+		if err := out.WriteFieldBegin(field.Name, field.Type.Type.ToThriftTType(), int16(field.ID)); err != nil {
+			return err
+		}
+		if err := writer(ctx, elem, out, field.Type, opt); err != nil {
+			return err
+		}
+		if err := out.WriteFieldEnd(); err != nil {
+			return err
+		}
+
 	}
 	if err := out.WriteFieldStop(); err != nil {
 		return err

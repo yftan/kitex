@@ -18,6 +18,13 @@ package generic
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"github.com/cloudwego/kitex/pkg/generic/descriptor"
+	"github.com/cloudwego/kitex/pkg/generic/thrift"
+	"github.com/cloudwego/kitex/pkg/remote/codec"
+	"github.com/cloudwego/kitex/pkg/serviceinfo"
+	"sync/atomic"
 
 	"github.com/cloudwego/kitex/pkg/remote"
 )
@@ -26,20 +33,68 @@ import (
 type JSONRequest = string
 
 type jsonThriftCodec struct {
+	svcDsc   atomic.Value // *idl
+	provider DescriptorProvider
+	codec    remote.PayloadCodec
 }
 
-func (c *jsonThriftCodec) UpdateIDL(main string, includes map[string]string) error {
-	return nil
+func newJsonThriftCodec(p DescriptorProvider, codec remote.PayloadCodec) (*jsonThriftCodec, error) {
+	svc := <-p.Provide()
+	c := &jsonThriftCodec{codec: codec, provider: p}
+	c.svcDsc.Store(svc)
+	go c.update()
+	return c, nil
 }
 
-func (c *jsonThriftCodec) Marshal(ctx context.Context, message remote.Message, out remote.ByteBuffer) error {
-	// ...
-	return nil
+func (c *jsonThriftCodec) update() {
+	for {
+		svc, ok := <-c.provider.Provide()
+		if !ok {
+			return
+		}
+		c.svcDsc.Store(svc)
+	}
 }
 
-func (c *jsonThriftCodec) Unmarshal(ctx context.Context, message remote.Message, in remote.ByteBuffer) error {
-	// ...
-	return nil
+func (c *jsonThriftCodec) Marshal(ctx context.Context, msg remote.Message, out remote.ByteBuffer) error {
+	method := msg.RPCInfo().Invocation().MethodName()
+	if method == "" {
+		return errors.New("empty methodName in thrift Marshal")
+	}
+	if msg.MessageType() == remote.Exception {
+		return c.codec.Marshal(ctx, msg, out)
+	}
+	svcDsc, ok := c.svcDsc.Load().(*descriptor.ServiceDescriptor)
+	if !ok {
+		return fmt.Errorf("get parser ServiceDescriptor failed")
+	}
+	wm, err := thrift.NewWriteStruct(svcDsc, method, msg.RPCRole() == remote.Client)
+	if err != nil {
+		return err
+	}
+	msg.Data().(WithCodec).SetCodec(wm)
+	return c.codec.Marshal(ctx, msg, out)
+}
+
+func (c *jsonThriftCodec) Unmarshal(ctx context.Context, msg remote.Message, in remote.ByteBuffer) error {
+	if err := codec.NewDataIfNeeded(serviceinfo.GenericMethod, msg); err != nil {
+		return err
+	}
+	svcDsc, ok := c.svcDsc.Load().(*descriptor.ServiceDescriptor)
+	if !ok {
+		return fmt.Errorf("get parser ServiceDescriptor failed")
+	}
+	rm := thrift.NewReadStruct(svcDsc, msg.RPCRole() == remote.Client)
+	msg.Data().(WithCodec).SetCodec(rm)
+	return c.codec.Unmarshal(ctx, msg, in)
+}
+
+func (c *jsonThriftCodec) getMethod(req interface{}, method string) (*Method, error) {
+	fnSvc, err := c.svcDsc.Load().(*descriptor.ServiceDescriptor).LookupFunctionByMethod(method)
+	if err != nil {
+		return nil, err
+	}
+	return &Method{method, fnSvc.Oneway}, nil
 }
 
 func (c *jsonThriftCodec) Name() string {
