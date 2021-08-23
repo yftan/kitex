@@ -58,8 +58,8 @@ func (m *WriteJSON) Write(ctx context.Context, out thrift.TProtocol, msg interfa
 }
 
 // NewReadJSON ...
-func NewReadJSON(svc *descriptor.ServiceDescriptor, isClient bool) *ReadStruct {
-	return &ReadStruct{
+func NewReadJSON(svc *descriptor.ServiceDescriptor, isClient bool) *ReadJSON {
+	return &ReadJSON{
 		svc:      svc,
 		isClient: isClient,
 	}
