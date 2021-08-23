@@ -65,7 +65,7 @@ func (c *mapThriftCodec) Marshal(ctx context.Context, msg remote.Message, out re
 	if !ok {
 		return fmt.Errorf("get parser ServiceDescriptor failed")
 	}
-	wm, err := thrift.NewWriteJSON(svcDsc, method, msg.RPCRole() == remote.Client)
+	wm, err := thrift.NewWriteStruct(svcDsc, method, msg.RPCRole() == remote.Client)
 	if err != nil {
 		return err
 	}
@@ -81,7 +81,7 @@ func (c *mapThriftCodec) Unmarshal(ctx context.Context, msg remote.Message, in r
 	if !ok {
 		return fmt.Errorf("get parser ServiceDescriptor failed")
 	}
-	rm := thrift.NewReadJSON(svcDsc, msg.RPCRole() == remote.Client)
+	rm := thrift.NewReadStruct(svcDsc, msg.RPCRole() == remote.Client)
 	msg.Data().(WithCodec).SetCodec(rm)
 	return c.codec.Unmarshal(ctx, msg, in)
 }
