@@ -82,45 +82,52 @@ func typeOf(sample interface{}, tt descriptor.Type) (descriptor.Type, writer, er
 	return 0, nil, fmt.Errorf("unsupported type:%T, expected type:%s", sample, tt)
 }
 
-func typeJSONOf(sample interface{}, tt descriptor.Type) (writer, error) {
+func typeJSONOf(data *simplejson.Json, tt descriptor.Type) (interface{}, writer, error) {
 	switch tt {
 	case descriptor.BOOL:
-		return writeBool, nil
-	case descriptor.I08:
-		return writeInt8, nil
-	case descriptor.I16:
-		return writeInt16, nil
-	case descriptor.I32:
-		return writeInt32, nil
-	case descriptor.I64:
-		return writeInt64, nil
-	case descriptor.DOUBLE:
-		return writeJSONFloat64, nil
-	case descriptor.STRING:
-		switch sample.(type) {
-		case string:
-			return writeString, nil
-		case []byte:
-			return writeBinary, nil
+		if fieldData, err := data.Bool(); err == nil {
+			return fieldData, writeBool, nil
 		}
-		return writeString, nil
+	case descriptor.I08:
+		if fieldData, err := data.Int(); err == nil {
+			return fieldData, writeInt8, nil
+		}
+	case descriptor.I16:
+		if fieldData, err := data.Int(); err == nil {
+			return fieldData, writeInt16, nil
+		}
+	case descriptor.I32:
+		if fieldData, err := data.Int(); err == nil {
+			return fieldData, writeInt32, nil
+		}
+	case descriptor.I64:
+		if fieldData, err := data.Int64(); err == nil {
+			return fieldData, writeInt64, nil
+		}
+	case descriptor.DOUBLE:
+		if fieldData, err := data.Float64(); err == nil {
+			return fieldData, writeJSONFloat64, nil
+		}
+	case descriptor.STRING:
+		if fieldData, err := data.String(); err == nil {
+			return fieldData, writeString, nil
+		}
 	//case descriptor.BINARY:
 	//	return writeBinary, nil
 	case descriptor.LIST:
-		return writeList, nil
+		if fieldData, err := data.Array(); err == nil {
+			return fieldData, writeList, nil
+		}
 	case descriptor.MAP:
-		switch sample.(type) {
-		case map[interface{}]interface{}:
-			return writeInterfaceMap, nil
-		case map[string]interface{}:
-			return writeStringMap, nil
+		if mp, err := data.Map(); err == nil {
+			return mp, writeStringMap, nil
 		}
 	case descriptor.STRUCT:
-		return writeJSON, nil
+		return data, writeJSON, nil
 	case descriptor.VOID: // nil and Void
-		return writeVoid, nil
+		return data, writeVoid, nil
 	}
-	return nil, fmt.Errorf("write JSON expected type:%s", tt)
+	return 0, nil, fmt.Errorf("unsupported type:%T, expected type:%s", data, tt)
 }
 
 func nextWriter(sample interface{}, t *descriptor.TypeDescriptor) (writer, error) {
@@ -134,12 +141,12 @@ func nextWriter(sample interface{}, t *descriptor.TypeDescriptor) (writer, error
 	return fn, assertType(t.Type, tt)
 }
 
-func nextJSONWriter(sample interface{}, t *descriptor.TypeDescriptor) (writer, error) {
-	fn, err := typeJSONOf(sample, t.Type)
+func nextJSONWriter(data *simplejson.Json, t *descriptor.TypeDescriptor) (interface{}, writer, error) {
+	v, fn, err := typeJSONOf(data, t.Type)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return fn, nil
+	return v, fn, nil
 }
 
 func wrapStructWriter(ctx context.Context, val interface{}, out thrift.TProtocol, t *descriptor.TypeDescriptor, opt *writerOption) error {
@@ -523,14 +530,14 @@ func writeJSON(ctx context.Context, val interface{}, out thrift.TProtocol, t *de
 			continue
 		}
 
-		writer, err := nextJSONWriter(elem, field.Type)
+		v, writer, err := nextJSONWriter(elem, field.Type)
 		if err != nil {
 			return fmt.Errorf("nextWriter of field[%s] error %w", name, err)
 		}
 		if err := out.WriteFieldBegin(field.Name, field.Type.Type.ToThriftTType(), int16(field.ID)); err != nil {
 			return err
 		}
-		if err := writer(ctx, elem, out, field.Type, opt); err != nil {
+		if err := writer(ctx, v, out, field.Type, opt); err != nil {
 			return err
 		}
 		if err := out.WriteFieldEnd(); err != nil {
