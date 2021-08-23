@@ -453,8 +453,7 @@ func writeHTTPRequest(ctx context.Context, val interface{}, out thrift.TProtocol
 }
 
 func writeJSON(ctx context.Context, val interface{}, out thrift.TProtocol, t *descriptor.TypeDescriptor, opt *writerOption) error {
-	v := val.(*descriptor.JSONValue)
-	data := v.Value
+	data := val.(*simplejson.Json)
 	err := out.WriteStructBegin(t.Struct.Name)
 	if err != nil {
 		return err
