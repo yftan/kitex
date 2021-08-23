@@ -82,6 +82,47 @@ func typeOf(sample interface{}, tt descriptor.Type) (descriptor.Type, writer, er
 	return 0, nil, fmt.Errorf("unsupported type:%T, expected type:%s", sample, tt)
 }
 
+func typeJSONOf(sample interface{}, tt descriptor.Type) (writer, error) {
+	switch tt {
+	case descriptor.BOOL:
+		return writeBool, nil
+	case descriptor.I08:
+		return writeInt8, nil
+	case descriptor.I16:
+		return writeInt16, nil
+	case descriptor.I32:
+		return writeInt32, nil
+	case descriptor.I64:
+		return writeInt64, nil
+	case descriptor.DOUBLE:
+		return writeJSONFloat64, nil
+	case descriptor.STRING:
+		switch sample.(type) {
+		case string:
+			return writeString, nil
+		case []byte:
+			return writeBinary, nil
+		}
+		return writeString, nil
+	//case descriptor.BINARY:
+	//	return writeBinary, nil
+	case descriptor.LIST:
+		return writeList, nil
+	case descriptor.MAP:
+		switch sample.(type) {
+		case map[interface{}]interface{}:
+			return writeInterfaceMap, nil
+		case map[string]interface{}:
+			return writeStringMap, nil
+		}
+	case descriptor.STRUCT:
+		return writeJSON, nil
+	case descriptor.VOID: // nil and Void
+		return writeVoid, nil
+	}
+	return nil, fmt.Errorf("write JSON expected type:%s", tt)
+}
+
 func nextWriter(sample interface{}, t *descriptor.TypeDescriptor) (writer, error) {
 	tt, fn, err := typeOf(sample, t.Type)
 	if err != nil {
@@ -91,6 +132,14 @@ func nextWriter(sample interface{}, t *descriptor.TypeDescriptor) (writer, error
 		tt = thrift.SET
 	}
 	return fn, assertType(t.Type, tt)
+}
+
+func nextJSONWriter(sample interface{}, t *descriptor.TypeDescriptor) (writer, error) {
+	fn, err := typeJSONOf(sample, t.Type)
+	if err != nil {
+		return nil, err
+	}
+	return fn, nil
 }
 
 func wrapStructWriter(ctx context.Context, val interface{}, out thrift.TProtocol, t *descriptor.TypeDescriptor, opt *writerOption) error {
@@ -474,7 +523,7 @@ func writeJSON(ctx context.Context, val interface{}, out thrift.TProtocol, t *de
 			continue
 		}
 
-		writer, err := nextWriter(elem, field.Type)
+		writer, err := nextJSONWriter(elem, field.Type)
 		if err != nil {
 			return fmt.Errorf("nextWriter of field[%s] error %w", name, err)
 		}
