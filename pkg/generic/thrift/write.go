@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/bitly/go-simplejson"
 	"github.com/cloudwego/kitex/pkg/generic/descriptor"
 )
 
@@ -73,8 +74,8 @@ func typeOf(sample interface{}, tt descriptor.Type) (descriptor.Type, writer, er
 		}
 	case *descriptor.HTTPRequest:
 		return descriptor.STRUCT, writeHTTPRequest, nil
-	case *descriptor.JSONValue:
-		return descriptor.JSON, writeJSON, nil
+	case *simplejson.Json:
+		return descriptor.STRUCT, writeJSON, nil
 	case nil, descriptor.Void: // nil and Void
 		return descriptor.VOID, writeVoid, nil
 	}
