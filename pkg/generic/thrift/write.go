@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
-	"github.com/bitly/go-simplejson"
+	"github.com/bytedance/sonic/ast"
 	"github.com/cloudwego/kitex/pkg/generic/descriptor"
 )
 
@@ -74,7 +74,7 @@ func typeOf(sample interface{}, tt descriptor.Type) (descriptor.Type, writer, er
 		}
 	case *descriptor.HTTPRequest:
 		return descriptor.STRUCT, writeHTTPRequest, nil
-	case *simplejson.Json:
+	case ast.Node:
 		return descriptor.STRUCT, writeJSON, nil
 	case nil, descriptor.Void: // nil and Void
 		return descriptor.VOID, writeVoid, nil
@@ -82,52 +82,61 @@ func typeOf(sample interface{}, tt descriptor.Type) (descriptor.Type, writer, er
 	return 0, nil, fmt.Errorf("unsupported type:%T, expected type:%s", sample, tt)
 }
 
-func typeJSONOf(data *simplejson.Json, tt descriptor.Type) (interface{}, writer, error) {
+func typeJSONOf(data ast.Node, tt descriptor.Type) (v interface{}, w writer, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("json convert error:%#+v", r)
+		}
+	}()
 	switch tt {
 	case descriptor.BOOL:
-		if fieldData, err := data.Bool(); err == nil {
-			return fieldData, writeBool, nil
-		}
+		v = data.Bool()
+		w = writeBool
+		return
 	case descriptor.I08:
-		if fieldData, err := data.Int(); err == nil {
-			return fieldData, writeInt8, nil
-		}
+		v = int8(data.Int64())
+		w = writeInt8
+		return
 	case descriptor.I16:
-		if fieldData, err := data.Int(); err == nil {
-			return fieldData, writeInt16, nil
-		}
+		v = int16(data.Int64())
+		w = writeInt16
+		return
 	case descriptor.I32:
-		if fieldData, err := data.Int(); err == nil {
-			return fieldData, writeInt32, nil
-		}
+		v = int32(data.Int64())
+		w = writeInt32
+		return
 	case descriptor.I64:
-		if fieldData, err := data.Int64(); err == nil {
-			return fieldData, writeInt64, nil
-		}
+		v = data.Int64()
+		w = writeInt64
+		return
 	case descriptor.DOUBLE:
-		if fieldData, err := data.Float64(); err == nil {
-			return fieldData, writeJSONFloat64, nil
-		}
+		v = data.Float64()
+		w = writeJSONFloat64
+		return
 	case descriptor.STRING:
-		if fieldData, err := data.String(); err == nil {
-			return fieldData, writeString, nil
-		}
+		v = data.String()
+		w = writeString
+		return
 	//case descriptor.BINARY:
 	//	return writeBinary, nil
 	case descriptor.LIST:
-		if fieldData, err := data.Array(); err == nil {
-			return fieldData, writeList, nil
-		}
+		v = data.Array()
+		w = writeList
+		return
 	case descriptor.MAP:
-		if mp, err := data.Map(); err == nil {
-			return mp, writeStringMap, nil
-		}
+		v = data.Map()
+		w = writeStringMap
+		return
 	case descriptor.STRUCT:
-		return data, writeJSON, nil
+		v = data
+		w = writeJSON
+		return
 	case descriptor.VOID: // nil and Void
-		return data, writeVoid, nil
+		v = data
+		w = writeVoid
+		return
 	}
-	return 0, nil, fmt.Errorf("unsupported type:%T, expected type:%s", data, tt)
+	return 0, nil, fmt.Errorf("data:%#v, expected type:%s, err:%#v", data, tt, err)
 }
 
 func nextWriter(sample interface{}, t *descriptor.TypeDescriptor) (writer, error) {
@@ -141,7 +150,7 @@ func nextWriter(sample interface{}, t *descriptor.TypeDescriptor) (writer, error
 	return fn, assertType(t.Type, tt)
 }
 
-func nextJSONWriter(data *simplejson.Json, t *descriptor.TypeDescriptor) (interface{}, writer, error) {
+func nextJSONWriter(data ast.Node, t *descriptor.TypeDescriptor) (interface{}, writer, error) {
 	v, fn, err := typeJSONOf(data, t.Type)
 	if err != nil {
 		return nil, nil, err
@@ -509,7 +518,7 @@ func writeHTTPRequest(ctx context.Context, val interface{}, out thrift.TProtocol
 }
 
 func writeJSON(ctx context.Context, val interface{}, out thrift.TProtocol, t *descriptor.TypeDescriptor, opt *writerOption) error {
-	data := val.(*simplejson.Json)
+	data := val.(ast.Node)
 	err := out.WriteStructBegin(t.Struct.Name)
 	if err != nil {
 		return err
@@ -523,14 +532,14 @@ func writeJSON(ctx context.Context, val interface{}, out thrift.TProtocol, t *de
 			continue
 		}
 
-		if elem.Interface() == nil {
+		if elem.Type() == 0 {
 			if field.Required {
 				return fmt.Errorf("required field (%d/%s) missing", field.ID, name)
 			}
 			continue
 		}
 
-		v, writer, err := nextJSONWriter(elem, field.Type)
+		v, writer, err := nextJSONWriter(*elem, field.Type)
 		if err != nil {
 			return fmt.Errorf("nextWriter of field[%s] error %w", name, err)
 		}
