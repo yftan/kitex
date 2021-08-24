@@ -83,6 +83,7 @@ func typeOf(sample interface{}, tt descriptor.Type) (descriptor.Type, writer, er
 }
 
 func typeJSONOf(data *simplejson.Json, tt descriptor.Type) (interface{}, writer, error) {
+	var err error
 	switch tt {
 	case descriptor.BOOL:
 		if fieldData, err := data.Bool(); err == nil {
@@ -90,15 +91,15 @@ func typeJSONOf(data *simplejson.Json, tt descriptor.Type) (interface{}, writer,
 		}
 	case descriptor.I08:
 		if fieldData, err := data.Int(); err == nil {
-			return fieldData, writeInt8, nil
+			return int8(fieldData), writeInt8, nil
 		}
 	case descriptor.I16:
 		if fieldData, err := data.Int(); err == nil {
-			return fieldData, writeInt16, nil
+			return int16(fieldData), writeInt16, nil
 		}
 	case descriptor.I32:
 		if fieldData, err := data.Int(); err == nil {
-			return fieldData, writeInt32, nil
+			return int32(fieldData), writeInt32, nil
 		}
 	case descriptor.I64:
 		if fieldData, err := data.Int64(); err == nil {
@@ -127,7 +128,7 @@ func typeJSONOf(data *simplejson.Json, tt descriptor.Type) (interface{}, writer,
 	case descriptor.VOID: // nil and Void
 		return data, writeVoid, nil
 	}
-	return 0, nil, fmt.Errorf("unsupported type:%T, expected type:%s", data, tt)
+	return 0, nil, fmt.Errorf("data:%#v, expected type:%s, err:%#v", data, tt, err)
 }
 
 func nextWriter(sample interface{}, t *descriptor.TypeDescriptor) (writer, error) {

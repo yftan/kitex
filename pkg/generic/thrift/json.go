@@ -18,6 +18,8 @@ package thrift
 
 import (
 	"context"
+	"fmt"
+	"github.com/bitly/go-simplejson"
 
 	"github.com/apache/thrift/lib/go/thrift"
 
@@ -54,7 +56,11 @@ func (m *WriteJSON) Write(ctx context.Context, out thrift.TProtocol, msg interfa
 	if !m.hasRequestBase {
 		requestBase = nil
 	}
-	return wrapStructWriter(ctx, msg, out, m.ty, &writerOption{requestBase: requestBase})
+	body, err := simplejson.NewJson([]byte(msg.(string)))
+	if err != nil {
+		return err
+	}
+	return wrapStructWriter(ctx, body, out, m.ty, &writerOption{requestBase: requestBase})
 }
 
 // NewReadJSON ...
@@ -83,5 +89,17 @@ func (m *ReadJSON) Read(ctx context.Context, method string, in thrift.TProtocol)
 	if !m.isClient {
 		fDsc = fnDsc.Request
 	}
-	return skipStructReader(ctx, in, fDsc, &readerOption{forJSON: true, throwException: true})
+	resp, err := skipStructReader(ctx, in, fDsc, &readerOption{forJSON: true, throwException: true})
+	if err != nil {
+		return nil, err
+	}
+	respJSON, ok := resp.(*simplejson.Json)
+	if !ok {
+		return nil, fmt.Errorf("response is not simple json. response:%#v", resp)
+	}
+	encode, err := respJSON.Encode()
+	if err != nil {
+		return nil, err
+	}
+	return string(encode), nil
 }
