@@ -19,7 +19,8 @@ package thrift
 import (
 	"context"
 	"fmt"
-	"github.com/bitly/go-simplejson"
+	"github.com/bytedance/sonic"
+	"github.com/bytedance/sonic/ast"
 
 	"github.com/apache/thrift/lib/go/thrift"
 
@@ -56,9 +57,9 @@ func (m *WriteJSON) Write(ctx context.Context, out thrift.TProtocol, msg interfa
 	if !m.hasRequestBase {
 		requestBase = nil
 	}
-	body, err := simplejson.NewJson([]byte(msg.(string)))
-	if err != nil {
-		return err
+	body, err := ast.NewParser(msg.(string)).Parse()
+	if err != 0 {
+		return fmt.Errorf("decode failed: %v", err.Error())
 	}
 	return wrapStructWriter(ctx, body, out, m.ty, &writerOption{requestBase: requestBase})
 }
@@ -93,13 +94,9 @@ func (m *ReadJSON) Read(ctx context.Context, method string, in thrift.TProtocol)
 	if err != nil {
 		return nil, err
 	}
-	respJSON, ok := resp.(*simplejson.Json)
-	if !ok {
-		return nil, fmt.Errorf("response is not simple json. response:%#v", resp)
-	}
-	encode, err := respJSON.Encode()
+	respNode, err := sonic.Marshal(resp)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("response marshal failed. err:%#v", err)
 	}
-	return string(encode), nil
+	return string(respNode), nil
 }

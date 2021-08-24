@@ -4,9 +4,8 @@ go 1.13
 
 require (
 	github.com/apache/thrift v0.13.0
-	github.com/bitly/go-simplejson v0.5.0
-	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 // indirect
 	github.com/bytedance/gopkg v0.0.0-20210709064845-3c00f9323f09
+	github.com/bytedance/sonic v0.0.0-20210824052355-8c119dd72d11
 	github.com/cespare/xxhash v1.1.0
 	github.com/cloudwego/netpoll v0.0.3
 	github.com/cloudwego/netpoll-http2 v0.0.4
